@@ -19,9 +19,8 @@ services:
   # ---------------------------------------------------------------------------
   # Routes traffic to all Signet ecosystem applications:
   #   /           -> signet-app:3000
-  #   /marketplace -> marketplace-app:3002
-  #   /storage    -> marketplace-app:3002
-  #   /api        -> trustvault-api:3001
+  #   /marketplace -> marketplace-app:3001
+  #   /storage    -> trustvalut-api:3002
   # ---------------------------------------------------------------------------
   nginx:
     image: nginx:alpine

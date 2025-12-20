@@ -17,11 +17,11 @@ Internet ──────────▶│  │           nginx:alpine       
                     │    │           │           │            │
                     │    ▼           ▼           ▼            │
                     │ ┌─────┐   ┌─────────┐  ┌─────────┐      │
-                    │ │ /   │   │/market- │  │  /api   │      │
+                    │ │ /   │   │/market- │  │  /storage  │      │
                     │ │     │   │  place  │  │         │      │
                     │ │signet│   │market- │  │trustvault│     │
                     │ │:3000│   │place    │  │-api     │      │
-                    │ │     │   │:3002    │  │:3001    │      │
+                    │ │     │   │:3001    │  │:3002    │      │
                     │ └─────┘   └─────────┘  └─────────┘      │
                     │                                         │
                     │         signet-network (bridge)         │
@@ -32,10 +32,9 @@ Internet ──────────▶│  │           nginx:alpine       
 
 | Path | Service | Internal Port |
 |------|---------|---------------|
-| `/` | signet-app | 3000 |
-| `/marketplace` | marketplace-app | 3002 |
-| `/storage` | marketplace-app | 3002 |
-| `/api` | trustvault-api | 3001 |
+| `/` | signet-app | 3000          |
+| `/marketplace` | marketplace-app | 3001          |
+| `/storage` | marketplace-app | 3002          |
 
 ## Prerequisites
 
