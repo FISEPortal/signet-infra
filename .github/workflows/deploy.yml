@@ -1,0 +1,169 @@
+# =============================================================================
+# Signet Infrastructure - GitHub Actions CI/CD
+# =============================================================================
+# Deploys the shared nginx reverse proxy and network configuration
+#
+# This workflow:
+#   - Deploys nginx configuration changes
+#   - Creates/updates the shared signet-network
+#   - Reloads nginx when config changes
+#
+# Usage:
+#   - Push to main        → deploys infrastructure
+#   - Manual trigger      → force redeploy
+#
+# -----------------------------------------------------------------------------
+# Required Secrets:
+# -----------------------------------------------------------------------------
+# Deployment (SSH):
+#   - SIGNET_DEPLOY_HOST    (SSH hostname or IP)
+#   - SIGNET_DEPLOY_USER    (SSH username)
+#   - SIGNET_DEPLOY_KEY     (SSH private key, full PEM)
+#   - INFRA_DEPLOY_PATH     (Remote path, e.g. /opt/signet-infra)
+# =============================================================================
+
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'nginx/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      force_restart:
+        description: 'Force restart nginx container'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  DEPLOY_PATH: /opt/signet-infra
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job: Deploy Infrastructure
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy Nginx & Network
+    runs-on: ubuntu-latest
+    environment:
+      name: Production
+      url: https://signetapp.xyz
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SIGNET_DEPLOY_KEY }}
+
+      - name: Add host to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.SIGNET_DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create deployment directories
+        run: |
+          ssh ${{ secrets.SIGNET_DEPLOY_USER }}@${{ secrets.SIGNET_DEPLOY_HOST }} "
+            mkdir -p ${{ env.DEPLOY_PATH }}/nginx
+            sudo mkdir -p /app/logs/nginx /var/www/certbot
+            sudo chown -R ${{ secrets.SIGNET_DEPLOY_USER }}:${{ secrets.SIGNET_DEPLOY_USER }} /app/logs/nginx
+          "
+
+      - name: Copy infrastructure files
+        run: |
+          scp docker-compose.yml \
+            ${{ secrets.SIGNET_DEPLOY_USER }}@${{ secrets.SIGNET_DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/
+          scp nginx/nginx.conf \
+            ${{ secrets.SIGNET_DEPLOY_USER }}@${{ secrets.SIGNET_DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/nginx/
+
+      - name: Test nginx configuration
+        run: |
+          ssh ${{ secrets.SIGNET_DEPLOY_USER }}@${{ secrets.SIGNET_DEPLOY_HOST }} "
+            cd ${{ env.DEPLOY_PATH }}
+            
+            # Check if nginx container is running
+            if docker ps --format '{{.Names}}' | grep -q '^signet-nginx$'; then
+              # Test new config without applying
+              docker exec signet-nginx nginx -t
+            else
+              echo 'Nginx not running yet - will start fresh'
+            fi
+          "
+
+      - name: Deploy or update nginx
+        run: |
+          ssh ${{ secrets.SIGNET_DEPLOY_USER }}@${{ secrets.SIGNET_DEPLOY_HOST }} "
+            cd ${{ env.DEPLOY_PATH }}
+            
+            # Check if this is a fresh deploy or update
+            if docker ps --format '{{.Names}}' | grep -q '^signet-nginx$'; then
+              if [ '${{ github.event.inputs.force_restart }}' = 'true' ]; then
+                echo 'Force restart requested - recreating container...'
+                docker compose down
+                docker compose up -d
+              else
+                echo 'Reloading nginx configuration...'
+                docker exec signet-nginx nginx -s reload
+              fi
+            else
+              echo 'Starting nginx for the first time...'
+              docker compose up -d
+            fi
+          "
+
+      - name: Verify deployment
+        run: |
+          echo "Waiting for nginx to be ready..."
+          sleep 5
+          ssh ${{ secrets.SIGNET_DEPLOY_USER }}@${{ secrets.SIGNET_DEPLOY_HOST }} "
+            # Check nginx is running
+            if docker ps --format '{{.Names}}' | grep -q '^signet-nginx$'; then
+              echo '✅ Nginx container is running'
+            else
+              echo '❌ Nginx container is NOT running'
+              exit 1
+            fi
+            
+            # Check network exists
+            if docker network inspect signet-network >/dev/null 2>&1; then
+              echo '✅ signet-network exists'
+              
+              # Show connected containers
+              echo 'Connected containers:'
+              docker network inspect signet-network --format '{{range .Containers}}  - {{.Name}}{{println}}{{end}}'
+            else
+              echo '❌ signet-network does NOT exist'
+              exit 1
+            fi
+            
+            # Health check
+            if curl -sf http://localhost/health > /dev/null; then
+              echo '✅ Nginx health check passed'
+            else
+              echo '⚠️ Nginx health check failed (may be waiting for upstream services)'
+            fi
+          "
+
+      - name: Deployment summary
+        run: |
+          echo "## 🚀 Infrastructure Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Deployed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "**Host:** \`${{ secrets.SIGNET_DEPLOY_HOST }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Path:** \`${{ env.DEPLOY_PATH }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Time:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "Deploy application services to join the network:" >> $GITHUB_STEP_SUMMARY
+          echo "- signet: \`cd /opt/signet && docker compose up -d\`" >> $GITHUB_STEP_SUMMARY
+          echo "- marketplace: \`cd /opt/marketplace && docker compose up -d\`" >> $GITHUB_STEP_SUMMARY
+          echo "- trustvault: \`cd /opt/trustvault && docker compose up -d\`" >> $GITHUB_STEP_SUMMARY
+
