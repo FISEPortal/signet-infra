@@ -1,0 +1,161 @@
+name: Add Fiser User
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "yes" to confirm user creation'
+        required: true
+        type: string
+
+jobs:
+  add-user:
+    name: Add fiser user to deployment host
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Validate confirmation
+        if: ${{ github.event.inputs.confirm != 'yes' }}
+        run: |
+          echo "❌ Confirmation required. Please type 'yes' to proceed."
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Copy script and execute on deployment host
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script_stop: true
+          script: |
+            # Create temp directory for script
+            TEMP_DIR=$(mktemp -d)
+            trap "rm -rf $TEMP_DIR" EXIT
+            
+            # Write the script
+            cat << 'SCRIPT_EOF' > "$TEMP_DIR/add-fiser-user.sh"
+            #!/bin/bash
+            
+            set -e
+            
+            if [[ $EUID -ne 0 ]]; then
+               echo "This script must be run as root (use sudo)"
+               exit 1
+            fi
+            
+            USERNAME="fiser"
+            
+            if id "$USERNAME" &>/dev/null; then
+                echo "User '$USERNAME' already exists"
+                exit 1
+            fi
+            
+            echo "Creating user '$USERNAME'..."
+            useradd -m -s /bin/bash "$USERNAME"
+            
+            echo "Adding '$USERNAME' to docker group..."
+            usermod -aG docker "$USERNAME"
+            
+            echo "Adding '$USERNAME' to sudoers..."
+            usermod -aG sudo "$USERNAME"
+            
+            echo "Granting read/write access to /opt..."
+            if [[ -d /opt ]]; then
+                chown -R root:"$USERNAME" /opt
+                chmod -R g+rw /opt
+            else
+                mkdir -p /opt
+                chown root:"$USERNAME" /opt
+                chmod 775 /opt
+            fi
+            
+            if [[ -d /root/.ssh ]]; then
+                echo "Copying SSH keys from /root/.ssh..."
+                cp -r /root/.ssh "/home/$USERNAME/.ssh"
+                chown -R "$USERNAME:$USERNAME" "/home/$USERNAME/.ssh"
+                chmod 700 "/home/$USERNAME/.ssh"
+                chmod 600 "/home/$USERNAME/.ssh/"* 2>/dev/null || true
+                for pubkey in "/home/$USERNAME/.ssh/"*.pub; do
+                    [[ -f "$pubkey" ]] && chmod 644 "$pubkey"
+                done
+            else
+                echo "Warning: /root/.ssh directory not found, skipping SSH key copy"
+            fi
+            
+            # Copy lockdown-root.sh to user's home directory
+            echo "Copying lockdown-root.sh to /home/$USERNAME/..."
+            cp "$TEMP_DIR/lockdown-root.sh" "/home/$USERNAME/lockdown-root.sh"
+            chown "$USERNAME:$USERNAME" "/home/$USERNAME/lockdown-root.sh"
+            chmod +x "/home/$USERNAME/lockdown-root.sh"
+            
+            echo ""
+            echo "✅ User '$USERNAME' created successfully!"
+            echo "  - Shell: /bin/bash"
+            echo "  - Docker access: yes (member of docker group)"
+            echo "  - Sudo access: yes (member of sudo group)"
+            echo "  - /opt access: read/write"
+            echo "  - SSH keys: $([ -d /home/$USERNAME/.ssh ] && echo 'copied' || echo 'not copied')"
+            echo "  - Lockdown script: copied to ~/lockdown-root.sh"
+            echo ""
+            echo "To lock down root user, login as '$USERNAME' and run:"
+            echo "  sudo ~/lockdown-root.sh"
+            SCRIPT_EOF
+            
+            # Write the lockdown script
+            cat << 'LOCKDOWN_EOF' > "$TEMP_DIR/lockdown-root.sh"
+            #!/bin/bash
+            
+            set -e
+            
+            if [[ $EUID -ne 0 ]]; then
+               echo "This script must be run as root (use sudo)"
+               exit 1
+            fi
+            
+            echo "⚠️  WARNING: This will disable root login!"
+            echo "Make sure you have another user with sudo access before proceeding."
+            echo ""
+            
+            SUDO_USERS=$(getent group sudo | cut -d: -f4)
+            if [[ -z "$SUDO_USERS" ]]; then
+                echo "❌ ERROR: No users found in sudo group!"
+                echo "Create a user with sudo access before locking down root."
+                exit 1
+            fi
+            
+            echo "Users with sudo access: $SUDO_USERS"
+            echo ""
+            
+            # Auto-confirm in CI environment
+            echo "Locking down root user..."
+            
+            if [[ -f /root/.ssh/authorized_keys ]]; then
+                echo "Removing /root/.ssh/authorized_keys..."
+                rm -f /root/.ssh/authorized_keys
+                echo "  ✓ Removed authorized_keys"
+            else
+                echo "  - No authorized_keys file found"
+            fi
+            
+            echo "Disabling root shell login..."
+            usermod -s /usr/sbin/nologin root
+            echo "  ✓ Root shell set to /usr/sbin/nologin"
+            
+            echo "Locking root password..."
+            passwd -l root
+            echo "  ✓ Root password locked"
+            
+            echo ""
+            echo "✅ Root user locked down successfully!"
+            LOCKDOWN_EOF
+            
+            chmod +x "$TEMP_DIR/add-fiser-user.sh"
+            chmod +x "$TEMP_DIR/lockdown-root.sh"
+            
+            # Execute with sudo
+            sudo "$TEMP_DIR/add-fiser-user.sh"
+
