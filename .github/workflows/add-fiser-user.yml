@@ -159,3 +159,60 @@ jobs:
             # Execute with sudo
             sudo "$TEMP_DIR/add-fiser-user.sh"
 
+      - name: Verify fiser user SSH access
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: fiser
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script_stop: true
+          script: |
+            echo "╔════════════════════════════════════════════════════════════╗"
+            echo "║           FISER USER SSH VERIFICATION                      ║"
+            echo "╚════════════════════════════════════════════════════════════╝"
+            echo ""
+            echo "✅ SSH login successful!"
+            echo ""
+            echo "User details:"
+            echo "  - Username: $(whoami)"
+            echo "  - Home: $HOME"
+            echo "  - Shell: $SHELL"
+            echo "  - Groups: $(groups)"
+            echo ""
+            
+            # Verify sudo access
+            echo "Checking sudo access..."
+            if sudo -n true 2>/dev/null; then
+                echo "  ✅ Sudo access: working (passwordless)"
+            else
+                echo "  ⚠️  Sudo access: requires password"
+            fi
+            
+            # Verify docker access
+            echo ""
+            echo "Checking Docker access..."
+            if docker info >/dev/null 2>&1; then
+                echo "  ✅ Docker access: working"
+            else
+                echo "  ⚠️  Docker access: may require re-login for group to take effect"
+            fi
+            
+            # Check for lockdown script
+            echo ""
+            echo "Checking lockdown script..."
+            if [[ -x ~/lockdown-root.sh ]]; then
+                echo "  ✅ Lockdown script: present at ~/lockdown-root.sh"
+            else
+                echo "  ❌ Lockdown script: not found"
+            fi
+            
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "🎉 Fiser user is ready!"
+            echo ""
+            echo "Next step: To lock down root access, run:"
+            echo "  sudo ~/lockdown-root.sh"
+            echo ""
+
