@@ -2,7 +2,6 @@
 
 # Script to add user 'fiser' with bash shell, docker access, and SSH keys from root
 
-set -e
 
 # Check if running as root
 if [[ $EUID -ne 0 ]]; then
@@ -10,7 +9,7 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-USERNAME="fiserr"
+USERNAME="fiser"
 
 # Check if user already exists
 if id "$USERNAME" &>/dev/null; then
@@ -21,6 +20,9 @@ fi
 # Create user with bash shell and home directory
 echo "Creating user '$USERNAME'..."
 useradd -m -s /bin/bash "$USERNAME"
+
+set -e
+
 
 # Add user to docker group for Docker CLI access
 echo "Adding '$USERNAME' to docker group..."
