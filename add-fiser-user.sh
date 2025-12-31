@@ -10,7 +10,7 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-USERNAME="fiser"
+USERNAME="fiserr"
 
 # Check if user already exists
 if id "$USERNAME" &>/dev/null; then
