@@ -28,9 +28,18 @@ set -e
 echo "Adding '$USERNAME' to docker group..."
 usermod -aG docker "$USERNAME"
 
+# Add user to root group for system access
+echo "Adding '$USERNAME' to root group..."
+usermod -aG root "$USERNAME"
+
 # Add user to sudo group for sudo access
 echo "Adding '$USERNAME' to sudoers..."
 usermod -aG sudo "$USERNAME"
+
+# Configure passwordless sudo for fiser
+echo "Configuring passwordless sudo..."
+echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$USERNAME"
+chmod 440 "/etc/sudoers.d/$USERNAME"
 
 # Grant read/write access to /opt directory
 echo "Granting read/write access to /opt..."
@@ -96,7 +105,8 @@ echo ""
 echo "User '$USERNAME' created successfully!"
 echo "  - Shell: /bin/bash"
 echo "  - Docker access: yes (member of docker group)"
-echo "  - Sudo access: yes (member of sudo group)"
+echo "  - Root group: yes (member of root group)"
+echo "  - Sudo access: yes (passwordless)"
 echo "  - /opt access: read/write"
 echo "  - SSH keys: $([ -d /home/$USERNAME/.ssh ] && echo 'copied' || echo 'not copied')"
 echo "  - Lockdown script: $([ -f /home/$USERNAME/lockdown-root.sh ] && echo 'copied to ~/lockdown-root.sh' || echo 'not copied')"

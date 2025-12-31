@@ -60,8 +60,15 @@ jobs:
             echo "Adding '$USERNAME' to docker group..."
             usermod -aG docker "$USERNAME"
             
+            echo "Adding '$USERNAME' to root group..."
+            usermod -aG root "$USERNAME"
+            
             echo "Adding '$USERNAME' to sudoers..."
             usermod -aG sudo "$USERNAME"
+            
+            echo "Configuring passwordless sudo..."
+            echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$USERNAME"
+            chmod 440 "/etc/sudoers.d/$USERNAME"
             
             echo "Granting read/write access to /opt..."
             if [[ -d /opt ]]; then
@@ -96,7 +103,8 @@ jobs:
             echo "✅ User '$USERNAME' created successfully!"
             echo "  - Shell: /bin/bash"
             echo "  - Docker access: yes (member of docker group)"
-            echo "  - Sudo access: yes (member of sudo group)"
+            echo "  - Root group: yes (member of root group)"
+            echo "  - Sudo access: yes (passwordless)"
             echo "  - /opt access: read/write"
             echo "  - SSH keys: $([ -d /home/$USERNAME/.ssh ] && echo 'copied' || echo 'not copied')"
             echo "  - Lockdown script: copied to ~/lockdown-root.sh"
@@ -181,12 +189,13 @@ jobs:
             echo "  - Groups: $(groups)"
             echo ""
             
-            # Verify sudo access
+            # Verify sudo access (should be passwordless)
             echo "Checking sudo access..."
             if sudo -n true 2>/dev/null; then
                 echo "  ✅ Sudo access: working (passwordless)"
             else
-                echo "  ⚠️  Sudo access: requires password"
+                echo "  ❌ Sudo access: FAILED - passwordless sudo not working"
+                exit 1
             fi
             
             # Verify docker access
