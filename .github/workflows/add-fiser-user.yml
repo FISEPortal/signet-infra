@@ -28,7 +28,7 @@ jobs:
         with:
           host: ${{ secrets.SIGNET_DEPLOY_HOST }}
           username: ${{ secrets.SIGNET_DEPLOY_USER }}
-          key: ${{ secrets.SIGNET_DEPLOY_SSH_KEY }}
+          key: ${{ secrets.SIGNET_DEPLOY_KEY }}
           port: ${{ secrets.SIGNET_DEPLOY_PORT || 22 }}
           script_stop: true
           script: |
