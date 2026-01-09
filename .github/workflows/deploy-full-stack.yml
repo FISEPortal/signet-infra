@@ -37,10 +37,9 @@ jobs:
       - name: Copy deployment scripts
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          host: ${{ secrets.SIGNET_DEPLOY_HOST }}
+          username: ${{ secrets.SIGNET_DEPLOY_USER }}
+          key: ${{ secrets.SIGNET_DEPLOY_KEY }}
           source: "scripts/*"
           target: "/tmp/deploy-scripts"
           strip_components: 0
@@ -51,10 +50,9 @@ jobs:
           SERVICES: ${{ github.event.inputs.services }}
           GITHUB_ORG: kevinhartig
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          host: ${{ secrets.SIGNET_DEPLOY_HOST }}
+          username: ${{ secrets.SIGNET_DEPLOY_USER }}
+          key: ${{ secrets.SIGNET_DEPLOY_KEY }}
           envs: SERVICES,GITHUB_ORG
           script_stop: true
           script: |
@@ -124,10 +122,9 @@ jobs:
       - name: Health check
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          host: ${{ secrets.SIGNET_DEPLOY_HOST }}
+          username: ${{ secrets.SIGNET_DEPLOY_USER }}
+          key: ${{ secrets.SIGNET_DEPLOY_KEY }}
           script: |
             echo "Container status:"
             docker ps --format "  {{.Names}}: {{.Status}}" | grep -E "(signet|marketplace|trustvault|nginx)" || echo "  No containers found"
