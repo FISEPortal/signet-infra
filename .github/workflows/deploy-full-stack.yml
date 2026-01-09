@@ -46,78 +46,39 @@ jobs:
 
       - name: Deploy services
         uses: appleboy/ssh-action@v1.0.3
-        env:
-          SERVICES: ${{ github.event.inputs.services }}
-          GITHUB_ORG: kevinhartig
         with:
           host: ${{ secrets.SIGNET_DEPLOY_HOST }}
           username: ${{ secrets.SIGNET_DEPLOY_USER }}
           key: ${{ secrets.SIGNET_DEPLOY_KEY }}
-          envs: SERVICES,GITHUB_ORG
           script_stop: true
+          envs: SERVICES
           script: |
+            export SERVICES="${{ github.event.inputs.services }}"
+            export GITHUB_ORG="kevinhartig"
             cd /tmp/deploy-scripts/scripts
             chmod +x *.sh
-            
-            deploy_service() {
-                local name="$1"
-                local repo="$2"
-                local dir="/opt/$name"
-                
-                echo ""
-                echo "━━━ Deploying: $name ━━━"
-                
-                if [[ -d "$dir/.git" ]]; then
-                    cd "$dir"
-                    sudo git pull
-                else
-                    sudo git clone "https://github.com/$GITHUB_ORG/$repo.git" "$dir"
-                fi
-                
-                cd "$dir"
-                
-                if [[ -f ".env.example" ]] && [[ ! -f ".env" ]]; then
-                    sudo cp .env.example .env
-                    echo "  ⚠ Created .env - review and update!"
-                fi
-                
-                if [[ -f "docker-compose.yml" ]] || [[ -f "compose.yml" ]]; then
-                    sudo docker compose up -d --build
-                    echo "  ✓ Started"
-                fi
-            }
-            
-            # Create directories
             sudo mkdir -p /opt /app/logs/nginx /var/www/certbot
             
-            case "$SERVICES" in
-                all)
-                    deploy_service "signet-infra" "signet-infra"
-                    deploy_service "signet" "signet"
-                    deploy_service "marketplace-app" "marketplace-app"
-                    deploy_service "trustvault-api" "trustvault-api"
-                    ;;
-                infra-only)
-                    deploy_service "signet-infra" "signet-infra"
-                    ;;
-                signet)
-                    deploy_service "signet" "signet"
-                    ;;
-                marketplace)
-                    deploy_service "marketplace-app" "marketplace-app"
-                    ;;
-                trustvault)
-                    deploy_service "trustvault-api" "trustvault-api"
-                    ;;
-            esac
+            if [ "$SERVICES" = "all" ] || [ "$SERVICES" = "infra-only" ]; then
+              sudo ./deploy-infra.sh
+            fi
             
-            # Cleanup
+            if [ "$SERVICES" = "all" ] || [ "$SERVICES" = "signet" ]; then
+              sudo ./deploy-service.sh signet signet
+            fi
+            
+            if [ "$SERVICES" = "all" ] || [ "$SERVICES" = "marketplace" ]; then
+              sudo ./deploy-service.sh marketplace-app marketplace-app
+            fi
+            
+            if [ "$SERVICES" = "all" ] || [ "$SERVICES" = "trustvault" ]; then
+              sudo ./deploy-service.sh trustvault-api trustvault-api
+            fi
+            
             rm -rf /tmp/deploy-scripts
-            
             echo ""
-            echo "━━━ Deployment Complete ━━━"
-            echo ""
-            docker ps --format "{{.Names}}: {{.Status}}" | grep -E "(signet|marketplace|trustvault|nginx)" || true
+            echo "Deployment complete!"
+            docker ps --format "table {{.Names}}\t{{.Status}}" | head -10
 
       - name: Health check
         uses: appleboy/ssh-action@v1.0.3
@@ -127,14 +88,12 @@ jobs:
           key: ${{ secrets.SIGNET_DEPLOY_KEY }}
           script: |
             echo "Container status:"
-            docker ps --format "  {{.Names}}: {{.Status}}" | grep -E "(signet|marketplace|trustvault|nginx)" || echo "  No containers found"
-            
+            docker ps | grep -E "(signet|marketplace|trustvault|nginx)" || echo "  No containers found"
             echo ""
-            echo "Network connections:"
-            docker network inspect signet-network --format '{{range .Containers}}  - {{.Name}}{{println}}{{end}}' 2>/dev/null || echo "  Network not found"
-            
+            echo "Network:"
+            docker network inspect signet-network -f "Containers: {{ len .Containers }}" 2>/dev/null || echo "  Network not found"
             echo ""
-            echo "Health endpoints:"
-            curl -sk https://localhost/health 2>/dev/null && echo " (nginx)" || echo "  nginx: not responding"
+            echo "Health check:"
+            curl -sk https://localhost/health 2>/dev/null && echo " OK" || echo "  nginx: not responding"
 
 
