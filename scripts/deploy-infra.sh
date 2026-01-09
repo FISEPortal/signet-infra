@@ -51,20 +51,26 @@ echo "  ✓ /app/logs/nginx"
 echo "  ✓ /var/www/certbot"
 
 # -------------------------------------------------------------------------
-# Clone or update repository
+# Set up infrastructure files
 # -------------------------------------------------------------------------
 echo ""
-echo "Setting up repository..."
+echo "Setting up infrastructure..."
 
-if [[ -d "$INFRA_DIR/.git" ]]; then
-    echo "  Repository exists, pulling latest..."
-    cd "$INFRA_DIR"
-    git pull
-    echo "  ✓ Updated to latest"
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="$(dirname "$SCRIPT_DIR")"
+
+# If running from temp deploy location (GitHub Actions), copy files
+if [[ "$SOURCE_DIR" == /tmp/* ]]; then
+    echo "  Copying files from $SOURCE_DIR..."
+    mkdir -p "$INFRA_DIR"
+    cp -r "$SOURCE_DIR"/* "$INFRA_DIR"/
+    echo "  ✓ Files installed to $INFRA_DIR"
+elif [[ -d "$INFRA_DIR" ]]; then
+    echo "  ✓ Using existing installation at $INFRA_DIR"
 else
-    echo "  Cloning repository..."
-    git clone https://github.com/kevinhartig/signet-infra.git "$INFRA_DIR"
-    echo "  ✓ Cloned to $INFRA_DIR"
+    echo "  ❌ No source files found. Run from repo or use GitHub Actions."
+    exit 1
 fi
 
 cd "$INFRA_DIR"
@@ -91,10 +97,15 @@ else
     echo "      -out $CERT_PATH/fullchain.pem \\"
     echo "      -subj \"/CN=$DOMAIN\""
     echo ""
-    read -p "Continue without SSL? (containers will fail) [y/N]: " -n 1 -r
-    echo ""
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
+    # In non-interactive mode (CI), continue anyway
+    if [[ -t 0 ]]; then
+        read -p "Continue without SSL? (containers will fail) [y/N]: " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    else
+        echo "  (Non-interactive mode: continuing without SSL)"
     fi
 fi
 
