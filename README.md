@@ -34,7 +34,7 @@ Internet ──────────▶│  │           nginx:alpine       
 |------|---------|---------------|
 | `/` | signet-app | 3000          |
 | `/marketplace` | marketplace-app | 3001          |
-| `/storage` | marketplace-app | 3002          |
+| `/storage` | trustvault | 3002          |
 
 ## Prerequisites
 

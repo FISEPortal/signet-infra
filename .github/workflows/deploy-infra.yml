@@ -1,0 +1,74 @@
+name: Deploy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm'
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    name: Deploy nginx infrastructure
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Validate confirmation
+        if: ${{ github.event.inputs.confirm != 'deploy' }}
+        run: |
+          echo "❌ Confirmation required. Please type 'deploy' to proceed."
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Copy scripts to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          source: "scripts/*,docker-compose.yml,nginx/*"
+          target: "/tmp/signet-infra-deploy"
+          strip_components: 0
+
+      - name: Deploy infrastructure
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script_stop: true
+          script: |
+            cd /tmp/signet-infra-deploy
+            chmod +x scripts/*.sh
+            
+            # Run deploy script
+            sudo scripts/deploy-infra.sh
+            
+            # Cleanup
+            rm -rf /tmp/signet-infra-deploy
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            echo "Checking nginx status..."
+            docker ps --filter "name=signet-nginx"
+            
+            echo ""
+            echo "Testing health endpoint..."
+            curl -s http://localhost/health || echo "Health check failed (expected if no backend)"
+            
+            echo ""
+            echo "Network status:"
+            docker network inspect signet-network --format '{{range .Containers}}{{.Name}} {{end}}' || echo "No containers on network"
+
+

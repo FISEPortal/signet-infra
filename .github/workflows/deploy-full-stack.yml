@@ -1,0 +1,143 @@
+name: Deploy Full Stack
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "DEPLOY-ALL" to confirm full stack deployment'
+        required: true
+        type: string
+      services:
+        description: 'Services to deploy'
+        required: true
+        type: choice
+        default: 'all'
+        options:
+          - all
+          - infra-only
+          - signet
+          - marketplace
+          - trustvault
+
+jobs:
+  deploy:
+    name: Deploy Signet ecosystem
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Validate confirmation
+        if: ${{ github.event.inputs.confirm != 'DEPLOY-ALL' }}
+        run: |
+          echo "❌ Confirmation required. Please type 'DEPLOY-ALL' to proceed."
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Copy deployment scripts
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          source: "scripts/*"
+          target: "/tmp/deploy-scripts"
+          strip_components: 0
+
+      - name: Deploy services
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          SERVICES: ${{ github.event.inputs.services }}
+          GITHUB_ORG: kevinhartig
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          envs: SERVICES,GITHUB_ORG
+          script_stop: true
+          script: |
+            cd /tmp/deploy-scripts/scripts
+            chmod +x *.sh
+            
+            deploy_service() {
+                local name="$1"
+                local repo="$2"
+                local dir="/opt/$name"
+                
+                echo ""
+                echo "━━━ Deploying: $name ━━━"
+                
+                if [[ -d "$dir/.git" ]]; then
+                    cd "$dir"
+                    sudo git pull
+                else
+                    sudo git clone "https://github.com/$GITHUB_ORG/$repo.git" "$dir"
+                fi
+                
+                cd "$dir"
+                
+                if [[ -f ".env.example" ]] && [[ ! -f ".env" ]]; then
+                    sudo cp .env.example .env
+                    echo "  ⚠ Created .env - review and update!"
+                fi
+                
+                if [[ -f "docker-compose.yml" ]] || [[ -f "compose.yml" ]]; then
+                    sudo docker compose up -d --build
+                    echo "  ✓ Started"
+                fi
+            }
+            
+            # Create directories
+            sudo mkdir -p /opt /app/logs/nginx /var/www/certbot
+            
+            case "$SERVICES" in
+                all)
+                    deploy_service "signet-infra" "signet-infra"
+                    deploy_service "signet" "signet"
+                    deploy_service "marketplace-app" "marketplace-app"
+                    deploy_service "trustvault-api" "trustvault-api"
+                    ;;
+                infra-only)
+                    deploy_service "signet-infra" "signet-infra"
+                    ;;
+                signet)
+                    deploy_service "signet" "signet"
+                    ;;
+                marketplace)
+                    deploy_service "marketplace-app" "marketplace-app"
+                    ;;
+                trustvault)
+                    deploy_service "trustvault-api" "trustvault-api"
+                    ;;
+            esac
+            
+            # Cleanup
+            rm -rf /tmp/deploy-scripts
+            
+            echo ""
+            echo "━━━ Deployment Complete ━━━"
+            echo ""
+            docker ps --format "{{.Names}}: {{.Status}}" | grep -E "(signet|marketplace|trustvault|nginx)" || true
+
+      - name: Health check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            echo "Container status:"
+            docker ps --format "  {{.Names}}: {{.Status}}" | grep -E "(signet|marketplace|trustvault|nginx)" || echo "  No containers found"
+            
+            echo ""
+            echo "Network connections:"
+            docker network inspect signet-network --format '{{range .Containers}}  - {{.Name}}{{println}}{{end}}' 2>/dev/null || echo "  Network not found"
+            
+            echo ""
+            echo "Health endpoints:"
+            curl -sk https://localhost/health 2>/dev/null && echo " (nginx)" || echo "  nginx: not responding"
+
+
