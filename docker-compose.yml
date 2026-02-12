@@ -18,9 +18,9 @@ services:
   # Nginx Reverse Proxy
   # ---------------------------------------------------------------------------
   # Routes traffic to all Signet ecosystem applications:
-  #   /           -> signet-app:3000
+  #   /            -> signet-app:3000
   #   /marketplace -> marketplace-app:3001
-  #   /storage    -> trustvalut-api:3002
+  #   /storage     -> trustvault-api:3002
   # ---------------------------------------------------------------------------
   nginx:
     image: nginx:alpine
@@ -33,7 +33,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - /var/www/certbot:/var/www/certbot:ro
-      - /app/logs/nginx:/var/log/nginx
+      - ./logs/nginx:/var/log/nginx
     networks:
       - signet-network
     healthcheck:
