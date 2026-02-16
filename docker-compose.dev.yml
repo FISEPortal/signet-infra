@@ -1,0 +1,20 @@
+# =============================================================================
+# Signet Infrastructure - LOCAL DEVELOPMENT Override
+# =============================================================================
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Or set as default:
+#   export COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml
+#   docker compose up
+# =============================================================================
+
+services:
+  nginx:
+    ports:
+      - "80:80"
+      # Port 443 disabled for local dev (no SSL)
+    volumes:
+      - ./nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+      - ./logs/nginx:/var/log/nginx
+      # SSL volumes removed for local dev
