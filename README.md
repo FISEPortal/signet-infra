@@ -5,27 +5,27 @@ Shared infrastructure for the Signet ecosystem, providing a unified nginx revers
 ## Architecture
 
 ```
-                    ┌─────────────────────────────────────────┐
-                    │           signetapp.xyz                 │
-                    │                                         │
-                    │  ┌───────────────────────────────────┐  │
-Internet ──────────▶│  │           nginx:alpine            │  │
-  :80/:443          │  │         (signet-nginx)            │  │
-                    │  └─────────────┬─────────────────────┘  │
-                    │                │                        │
-                    │    ┌───────────┼───────────┐            │
-                    │    │           │           │            │
-                    │    ▼           ▼           ▼            │
-                    │ ┌─────┐   ┌─────────┐  ┌─────────┐      │
-                    │ │ /   │   │/market- │  │  /storage  │      │
-                    │ │     │   │  place  │  │         │      │
-                    │ │signet│   │market- │  │trustvault│     │
-                    │ │:3000│   │place    │  │-api     │      │
-                    │ │     │   │:3001    │  │:3002    │      │
-                    │ └─────┘   └─────────┘  └─────────┘      │
-                    │                                         │
-                    │         signet-network (bridge)         │
-                    └─────────────────────────────────────────┘
+                   ┌──────────────────────────────────────────┐
+                   │           signetapp.xyz                  │
+                   │                                          │
+                   │  ┌────────────────────────────────────┐  │
+Internet ─────────▶│  │         nginx:alpine               │  │
+  :80/:443         │  │       (signet-nginx)               │  │
+                   │  └──────────────┬─────────────────────┘  │
+                   │                 │                        │
+                   │    ┌────────────┼────────────┐           │
+                   │    │            │            │           │
+                   │    ▼            ▼            ▼           │
+                   │ ┌──────┐   ┌──────────┐  ┌──────────┐    │
+                   │ │  /   │   │/market-  │  │ /storage │    │
+                   │ │      │   │  place   │  │          │    │
+                   │ │signet│   │market-   │  │trustvault│    │
+                   │ │:3000 │   │place     │  │-api      │    │
+                   │ │      │   │:3001     │  │:3002     │    │
+                   │ └──────┘   └──────────┘  └──────────┘    │
+                   │                                          │
+                   │        signet-network (bridge)           │
+                   └──────────────────────────────────────────┘
 ```
 
 ## Routing
@@ -41,6 +41,25 @@ Internet ──────────▶│  │           nginx:alpine       
 - Docker and Docker Compose v2+
 - SSL certificates in `nginx/ssl/`
 - All application images built and available
+
+## Development Environment
+
+For local development without SSL:
+
+```bash
+# Start infrastructure with dev configuration
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+# Or set as default for the session
+export COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml
+docker compose up -d
+```
+
+The development configuration:
+- Exposes only port 80 (no SSL on port 443)
+- Uses `nginx/nginx.dev.conf` instead of `nginx/nginx.conf`
+- Skips SSL certificate volume mounts
+- Suitable for local testing without certificate setup
 
 ## Deployment
 
