@@ -110,8 +110,8 @@ jobs:
                 docker compose down
                 docker compose up -d
               else
-                echo 'Reloading nginx configuration...'
-                docker exec signet-nginx nginx -s reload
+                echo 'Restarting nginx container...'
+                docker compose restart nginx
               fi
             else
               echo 'Starting nginx for the first time...'
