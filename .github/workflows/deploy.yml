@@ -77,33 +77,41 @@ jobs:
             sudo chown -R ${{ secrets.SIGNET_DEPLOY_USER }}:${{ secrets.SIGNET_DEPLOY_USER }} /app/logs/nginx
           "
 
+      # The new config is uploaded beside the live one, not over it. The live nginx.conf is
+      # only replaced after the new one passes `nginx -t`, and is restored if the site is not
+      # healthy after the reload. Previously the file was overwritten first: a config that
+      # failed the test stayed on disk and took the site down at the next restart.
       - name: Copy infrastructure files
         run: |
           scp docker-compose.yml \
             ${{ secrets.SIGNET_DEPLOY_USER }}@${{ secrets.SIGNET_DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/
           scp nginx/nginx.conf \
-            ${{ secrets.SIGNET_DEPLOY_USER }}@${{ secrets.SIGNET_DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/nginx/
+            ${{ secrets.SIGNET_DEPLOY_USER }}@${{ secrets.SIGNET_DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/nginx/nginx.conf.new
 
-      - name: Test nginx configuration
+      # A throwaway nginx on the same network, with the real certificates: a missing
+      # certificate or unknown upstream fails here, before the live file is touched.
+      - name: Test new nginx configuration
         run: |
           ssh ${{ secrets.SIGNET_DEPLOY_USER }}@${{ secrets.SIGNET_DEPLOY_HOST }} "
+            set -e
             cd ${{ env.DEPLOY_PATH }}
-            
-            # Check if nginx container is running
-            if docker ps --format '{{.Names}}' | grep -q '^signet-nginx$'; then
-              # Test new config without applying
-              docker exec signet-nginx nginx -t
-            else
-              echo 'Nginx not running yet - will start fresh'
-            fi
+            docker run --rm --network signet-network \
+              -v \$PWD/nginx/nginx.conf.new:/etc/nginx/nginx.conf:ro \
+              -v /etc/letsencrypt:/etc/letsencrypt:ro \
+              -v /var/www/certbot:/var/www/certbot:ro \
+              nginx:alpine nginx -t
           "
 
       - name: Deploy or update nginx
         run: |
           ssh ${{ secrets.SIGNET_DEPLOY_USER }}@${{ secrets.SIGNET_DEPLOY_HOST }} "
-            cd ${{ env.DEPLOY_PATH }}
-            
-            # Check if this is a fresh deploy or update
+            set -e
+            cd ${{ env.DEPLOY_PATH }}/nginx
+            [ -f nginx.conf ] && cp nginx.conf nginx.conf.prev || true
+            # Rewritten in place (same inode), so the running container's bind mount sees it.
+            cat nginx.conf.new > nginx.conf
+            cd ..
+
             if docker ps --format '{{.Names}}' | grep -q '^signet-nginx$'; then
               if [ '${{ github.event.inputs.force_restart }}' = 'true' ]; then
                 echo 'Force restart requested - recreating container...'
@@ -117,6 +125,18 @@ jobs:
               echo 'Starting nginx for the first time...'
               docker compose up -d
             fi
+
+            # signetapp.xyz must still answer; otherwise put the previous config back.
+            sleep 5
+            if ! curl -skf -o /dev/null --resolve signetapp.xyz:443:127.0.0.1 https://signetapp.xyz/health; then
+              echo 'signetapp.xyz is not healthy after the change. Restoring the previous nginx.conf.'
+              if [ -f nginx/nginx.conf.prev ]; then
+                cat nginx/nginx.conf.prev > nginx/nginx.conf
+                docker exec signet-nginx nginx -s reload || docker compose up -d
+              fi
+              exit 1
+            fi
+            echo 'signetapp.xyz healthy after the change.'
           "
 
       - name: Verify deployment
