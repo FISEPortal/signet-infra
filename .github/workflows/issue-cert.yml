@@ -1,0 +1,75 @@
+# =============================================================================
+# Issue a Let's Encrypt certificate for a signetapp.xyz subdomain
+# =============================================================================
+# Uses the webroot method through the running nginx (its port-80 server serves
+# /.well-known/acme-challenge/ from /var/www/certbot), so nginx is never stopped and
+# signetapp.xyz stays up. Renewal is the host's existing `certbot renew` cron.
+#
+# Run this BEFORE deploying an nginx server block that uses the certificate: nginx refuses
+# to start with a missing certificate file.
+#
+# Required secrets: SIGNET_DEPLOY_HOST, SIGNET_DEPLOY_USER, SIGNET_DEPLOY_KEY
+# =============================================================================
+
+name: Issue certificate
+
+on:
+  workflow_dispatch:
+    inputs:
+      domain:
+        description: 'Domain to issue a certificate for'
+        required: true
+        type: choice
+        options:
+          - metrics.signetapp.xyz
+      confirm:
+        description: 'Type "issue" to confirm'
+        required: true
+        type: string
+
+jobs:
+  issue:
+    name: Issue certificate
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'issue'
+    environment:
+      name: Production
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SIGNET_DEPLOY_KEY }}
+
+      - name: Add host to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.SIGNET_DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+      # Proves the challenge path reaches this server's webroot before asking Let's Encrypt,
+      # so a DNS or routing problem cannot use up its rate limit.
+      - name: Check the challenge path is served
+        run: |
+          ssh ${{ secrets.SIGNET_DEPLOY_USER }}@${{ secrets.SIGNET_DEPLOY_HOST }} "
+            set -e
+            token=\$(openssl rand -hex 16)
+            sudo mkdir -p /var/www/certbot/.well-known/acme-challenge
+            echo \$token | sudo tee /var/www/certbot/.well-known/acme-challenge/\$token >/dev/null
+            got=\$(curl -sf http://${{ github.event.inputs.domain }}/.well-known/acme-challenge/\$token || true)
+            sudo rm -f /var/www/certbot/.well-known/acme-challenge/\$token
+            if [ \"\$got\" != \"\$token\" ]; then
+              echo 'http://${{ github.event.inputs.domain }}/.well-known/acme-challenge/ is not served from /var/www/certbot. Check DNS and nginx.'
+              exit 1
+            fi
+            echo 'Challenge path OK.'
+          "
+
+      - name: Issue certificate
+        run: |
+          ssh ${{ secrets.SIGNET_DEPLOY_USER }}@${{ secrets.SIGNET_DEPLOY_HOST }} "
+            set -e
+            command -v certbot >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq certbot; }
+            sudo certbot certonly --webroot -w /var/www/certbot \
+              -d ${{ github.event.inputs.domain }} \
+              --non-interactive --agree-tos --email admin@signetapp.xyz --no-eff-email \
+              --keep-until-expiring
+            sudo openssl x509 -in /etc/letsencrypt/live/${{ github.event.inputs.domain }}/fullchain.pem -noout -subject -enddate
+          "
